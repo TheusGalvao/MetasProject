@@ -1,9 +1,10 @@
-// --- IMPORTAÇÕES DO FIREBASE (Via CDN) ---
+// --- IMPORTAÇÕES DO FIREBASE (Database + Auth) ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 // ==========================================
-// 1. CONFIGURAÇÃO (COLE SUAS CHAVES AQUI)
+// 1. CONFIGURAÇÃO
 // ==========================================
 const firebaseConfig = {
     apiKey: "AIzaSyDCWSTDEHHdPFeRHiBQYB-cbIzFLwBKOW0",
@@ -15,78 +16,104 @@ const firebaseConfig = {
     appId: "1:159368423472:web:6401932f64edc49cc1e5f5"
 };
 
-// Configuração da API do Gemini e Calendar
 const API_CONFIG = {
-    GEMINI_API_KEY: "SUA_CHAVE_GEMINI_AQUI", 
+    GEMINI_API_KEY: "SUA_CHAVE_GEMINI_AQUI", // <--- LEMBRE-SE DE COLOCAR SUA CHAVE AQUI SE TIVER APAGADO
     CALENDAR_EMBED_URL: "https://calendar.google.com/calendar/embed?src=seu_email%40gmail.com&ctz=America%2FSao_Paulo" 
 };
 
 // Inicializa o Firebase
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
 
 // ==========================================
-// 2. ESTADO E LÓGICA (AGORA NA NUVEM)
+// 2. PWA SERVICE WORKER REGISTRATION
+// ==========================================
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .then(reg => console.log('PWA Service Worker registrado!'))
+            .catch(err => console.log('Falha no SW:', err));
+    });
+}
+
+// ==========================================
+// 3. ESTADO (COM USER AUTH)
 // ==========================================
 
 const State = {
-    projects: [], // Começa vazio, será preenchido pelo Firebase
+    user: null, // Guarda o usuário logado
+    projects: [],
     activeProjectId: null,
 
-    // Salvar agora envia para a nuvem
+    // Salva DENTRO da pasta do usuário específico
     save() { 
-        // Envia a lista inteira de projetos para o caminho 'projects/' no banco
-        set(ref(db, 'projects'), this.projects)
-        .catch(error => console.error("Erro ao salvar no Firebase:", error));
+        if (!this.user) return; // Não salva se não tiver logado
+        set(ref(db, `users/${this.user.uid}/projects`), this.projects)
+        .catch(error => console.error("Erro ao salvar:", error));
     },
     
-    // Load agora é automático (Realtime Listener)
+    // Escuta apenas os dados do usuário logado
     listen() {
-        const projectRef = ref(db, 'projects');
-        // Essa função roda SEMPRE que algo mudar no banco de dados (no PC ou Celular)
+        if (!this.user) return;
+        const projectRef = ref(db, `users/${this.user.uid}/projects`);
+        
         onValue(projectRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
                 this.projects = data;
-                // Se não tiver projeto ativo, pega o primeiro
-                if (!this.activeProjectId && this.projects.length > 0) {
-                    this.activeProjectId = this.projects[0].id;
+                // Se o projeto ativo sumiu ou é nulo, reseta
+                if (this.activeProjectId && !this.projects.find(p => p.id === this.activeProjectId)) {
+                    this.activeProjectId = null;
                 }
-                // Atualiza a interface toda vez que dados chegarem
                 App.refreshUI(); 
             } else {
-                // Se o banco estiver vazio (primeira vez), cria um exemplo
-                this.projects = [{ 
-                    id: 1, title: "Primeiro Projeto", 
-                    steps: [{ text: "Configurar Firebase", done: true }], 
-                    notes: ["Bem vindo ao Space OS na Nuvem!"] 
-                }];
-                this.save();
+                this.projects = []; // Banco vazio para este usuário
+                App.refreshUI();
             }
         });
     }
 };
 
 const App = {
-    currentView: 'dashboard', // Guarda onde o usuário está
-    saveTimeout: null, // <--- ADICIONE ISSO AQUI (Variável para controlar o tempo)
+    currentView: 'dashboard', 
+    saveTimeout: null,
+    lastRenderedId: null, // Para controle de renderização
 
     init() {
-        // Inicia a escuta do banco de dados
-        State.listen();
-        this.setupCalendar();
-        this.navigate('dashboard');
+        // Monitora o estado do Login
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // Usuário Entrou
+                console.log("Usuário logado:", user.email);
+                State.user = user;
+                document.getElementById('login-screen').style.display = 'none'; // Esconde login
+                State.listen(); // Começa a baixar os dados
+                this.setupCalendar();
+                this.navigate('dashboard');
+            } else {
+                // Usuário Saiu
+                console.log("Sem usuário");
+                State.user = null;
+                State.projects = [];
+                document.getElementById('login-screen').style.display = 'flex'; // Mostra login
+            }
+        });
     },
 
-    // Função auxiliar para atualizar tudo quando os dados mudam
+    // Funções de Auth
+    login() {
+        signInWithPopup(auth, provider).catch((error) => alert("Erro: " + error.message));
+    },
+
+    logout() {
+        signOut(auth).then(() => window.location.reload());
+    },
+
     refreshUI() {
-        // CORREÇÃO DO BUG DO TECLADO:
-        // Se o usuário estiver digitando nas anotações, NÃO redesenhe a tela agora.
-        // Isso evita que o campo seja destruído e o teclado feche.
-        if (document.activeElement && document.activeElement.id === 'notes-editor') {
-            console.log("Usuário digitando... ignorando atualização de tela.");
-            return;
-        }
+        // Proteção para não fechar teclado mobile nas notas
+        if (document.activeElement && document.activeElement.id === 'notes-editor') return;
 
         this.renderSidebar();
         if (this.currentView === 'dashboard') this.renderDashboard();
@@ -95,7 +122,6 @@ const App = {
 
     navigate(viewName, projectId = null) {
         this.currentView = viewName;
-        
         ['view-dashboard', 'view-project', 'view-chat', 'view-calendar'].forEach(id => 
             document.getElementById(id).classList.add('hidden')
         );
@@ -128,11 +154,14 @@ const App = {
     },
 
     renderDashboard() {
+        // Nome do usuário no dashboard
+        const userName = State.user ? State.user.displayName.split(" ")[0] : "Viajante";
+        
         const hour = new Date().getHours();
         let greeting = hour >= 18 ? "Boa noite" : hour >= 12 ? "Boa tarde" : "Bom dia";
         
         const greetingEl = document.getElementById('dash-greeting');
-        if(greetingEl) greetingEl.innerText = `${greeting}, Comandante`;
+        if(greetingEl) greetingEl.innerText = `${greeting}, ${userName}`;
 
         const totalProjects = State.projects.length;
         let totalDone = 0;
@@ -146,11 +175,9 @@ const App = {
 
         const elProj = document.getElementById('stat-projects');
         const elDone = document.getElementById('stat-completed');
-        const elPend = document.getElementById('stat-pending');
-
+        
         if(elProj) elProj.innerText = totalProjects;
         if(elDone) elDone.innerText = totalDone;
-        if(elPend) elPend.innerText = totalPending;
     },
 
     createNewProject() {
@@ -163,8 +190,7 @@ const App = {
                 notes: ["Início do projeto..."]
             };
             State.projects.push(newProj);
-            State.save(); // Salva no Firebase
-            // Não precisa chamar renderSidebar, o onValue fará isso automático
+            State.save();
             this.navigate('project', newProj.id);
         }
     },
@@ -174,60 +200,102 @@ const App = {
         if(!project) return;
 
         const container = document.getElementById('view-project');
-        // Garante que steps e notes existam (proteção contra dados vazios)
+        
         const steps = project.steps || [];
         const notes = project.notes || [];
-
         const completed = steps.filter(s => s.done).length;
         const total = steps.length || 1; 
         const progress = Math.round((completed / total) * 100);
 
-        container.innerHTML = `
-            <div style="max-width: 900px; margin: 0 auto;">
-                <input class="project-title" value="${project.title}" onchange="App.updateTitle(this.value)">
-                
-                <div class="progress-card">
-                    <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600; text-transform:uppercase; color:#999">
-                        <span>Progresso</span> <span>${progress}%</span>
-                    </div>
-                    <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+        // Lógica de Atualização Cirúrgica (Mobile Keyboard Fix)
+        const existingEditor = document.getElementById('notes-editor');
+        const isSameProject = this.lastRenderedId === id;
+        this.lastRenderedId = id;
+
+        if (!existingEditor || !isSameProject) {
+            // DESENHO COMPLETO
+            container.innerHTML = `
+                <div style="max-width: 900px; margin: 0 auto;">
+                    <input class="project-title" id="proj-title-input" value="${project.title}" oninput="App.updateTitle(this.value)">
                     
-                    <div id="step-list" style="margin-top: 20px;"></div>
-                    <div class="nav-item" onclick="App.addStep()" style="margin-top:15px; color:#888">
-                        <i class="ph ph-plus"></i> Adicionar etapa
+                    <div class="progress-card">
+                        <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600; text-transform:uppercase; color:#999">
+                            <span>Progresso</span> <span id="progress-text">${progress}%</span>
+                        </div>
+                        <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:${progress}%"></div></div>
+                        
+                        <div id="step-list" style="margin-top: 20px;"></div>
+                        <div class="nav-item" onclick="App.addStep()" style="margin-top:15px; color:#888">
+                            <i class="ph ph-plus"></i> Adicionar etapa
+                        </div>
+                    </div>
+
+                    <h3>Anotações</h3>
+                    <div id="notes-editor" contenteditable="true" style="outline:none; line-height:1.6; min-height:100px;" oninput="App.saveNotes(this)">
+                        ${notes.join('<br>') || "Comece a escrever aqui..."}
                     </div>
                 </div>
+            `;
+            this.renderStepsList(steps);
 
-                <h3>Anotações</h3>
-                <div id="notes-editor" contenteditable="true" style="outline:none; line-height:1.6" oninput="App.saveNotes(this)">
-                    ${notes.join('<br>') || "Comece a escrever aqui..."}
-                </div>
-            </div>
-        `;
+        } else {
+            // ATUALIZAÇÃO CIRÚRGICA
+            const titleInput = document.getElementById('proj-title-input');
+            if (document.activeElement !== titleInput) titleInput.value = project.title;
 
-        const stepList = container.querySelector('#step-list');
+            document.getElementById('progress-text').innerText = `${progress}%`;
+            document.getElementById('progress-fill').style.width = `${progress}%`;
+
+            this.renderStepsList(steps);
+
+            if (document.activeElement !== existingEditor) {
+                const newContent = notes.join('<br>') || "Comece a escrever aqui...";
+                if (existingEditor.innerHTML !== newContent) {
+                    existingEditor.innerHTML = newContent;
+                }
+            }
+        }
+    },
+
+    // Renderiza a lista com CHECKBOX + DATA (Prazo)
+    renderStepsList(steps) {
+        const stepList = document.getElementById('step-list');
+        stepList.innerHTML = '';
         steps.forEach((step, index) => {
+            // Estilo da data: vermelho se passou, laranja se é hoje
+            let dateStyle = "color:#999;";
+            if(step.date) {
+                const today = new Date().toISOString().split('T')[0];
+                if(step.date < today && !step.done) dateStyle = "color:#e53e3e; font-weight:bold;"; // Atrasado
+                else if(step.date === today && !step.done) dateStyle = "color:#d69e2e; font-weight:bold;"; // Hoje
+            }
+
             const el = document.createElement('div');
             el.className = 'step-item';
             el.innerHTML = `
                 <input type="checkbox" class="step-check" ${step.done ? 'checked' : ''}>
-                <span class="step-text ${step.done ? 'done' : ''}">${step.text}</span>
-                <i class="ph ph-trash" style="margin-left:auto; color:#faa; cursor:pointer" onclick="App.deleteStep(${index})"></i>
+                <span class="step-text ${step.done ? 'done' : ''}" style="flex:1">${step.text}</span>
+                
+                <input type="date" value="${step.date || ''}" 
+                       style="border:none; background:transparent; font-size:12px; margin-right:10px; ${dateStyle}"
+                       onchange="App.updateStepDate(${index}, this.value)">
+
+                <i class="ph ph-trash" style="color:#faa; cursor:pointer" onclick="App.deleteStep(${index})"></i>
             `;
-            el.querySelector('input').addEventListener('change', () => {
+            
+            // Evento Checkbox
+            el.querySelector('.step-check').addEventListener('change', () => {
                 step.done = !step.done;
-                State.save(); // Salva no Firebase
+                State.save(); 
             });
+            
             stepList.appendChild(el);
         });
     },
 
     updateTitle(val) {
         const p = State.projects.find(proj => proj.id === State.activeProjectId);
-        if(p) {
-            p.title = val;
-            State.save();
-        }
+        if(p) { p.title = val; State.save(); }
     },
 
     addStep() {
@@ -235,7 +303,17 @@ const App = {
         if(text) {
             const p = State.projects.find(proj => proj.id === State.activeProjectId);
             if(!p.steps) p.steps = [];
-            p.steps.push({ text, done: false });
+            // Adiciona campo 'date' vazio
+            p.steps.push({ text, done: false, date: "" });
+            State.save();
+        }
+    },
+
+    // Nova função para salvar a data
+    updateStepDate(index, newDate) {
+        const p = State.projects.find(proj => proj.id === State.activeProjectId);
+        if(p && p.steps[index]) {
+            p.steps[index].date = newDate;
             State.save();
         }
     },
@@ -251,15 +329,10 @@ const App = {
     saveNotes(editor) {
         const p = State.projects.find(proj => proj.id === State.activeProjectId);
         if(p) {
-            // 1. Atualiza a memória local IMEDIATAMENTE (para não perder o que digitou)
             p.notes = [editor.innerHTML];
-
-            // 2. Agenda o salvamento na nuvem para daqui a 1.5 segundos
-            // Se você digitar de novo antes disso, o timer reinicia.
             if (this.saveTimeout) clearTimeout(this.saveTimeout);
-            
             this.saveTimeout = setTimeout(() => {
-                State.save(); // Só envia para o Firebase quando você parar de digitar
+                State.save(); 
                 console.log("Salvo na nuvem!");
             }, 1500);
         }
@@ -289,11 +362,35 @@ const Chat = {
             return;
         }
 
-        const loadingId = this.addBubble("Buscando modelo...", 'ai', true);
+        const loadingId = this.addBubble("Pensando...", 'ai', true);
+
+        // --- CONTEXTO INTELIGENTE DO PROJETO ---
+        let contextPrompt = "";
+        if (State.activeProjectId) {
+            const p = State.projects.find(proj => proj.id === State.activeProjectId);
+            if (p) {
+                // Remove HTML das notas para economizar tokens
+                const cleanNotes = (p.notes || []).join(" ").replace(/<[^>]*>?/gm, '');
+                const stepsList = (p.steps || []).map(s => `- ${s.text} (${s.done ? 'Feito' : 'Pendente'} - Prazo: ${s.date || 'Sem data'})`).join("\n");
+                
+                contextPrompt = `
+CONTEXTO DO SISTEMA:
+O usuário está trabalhando no projeto: "${p.title}".
+Anotações atuais: "${cleanNotes}".
+Lista de etapas:
+${stepsList}
+
+USUÁRIO PERGUNTOU: ${text}
+Responda de forma curta e útil baseada no projeto acima.
+`;
+            }
+        } else {
+            contextPrompt = text;
+        }
+        // ---------------------------------------
 
         try {
             if (!this.selectedModel) {
-                // ... Lógica simplificada de busca de modelo ...
                 const listResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_CONFIG.GEMINI_API_KEY}`);
                 const listData = await listResponse.json();
                 const models = listData.models || [];
@@ -306,7 +403,7 @@ const Chat = {
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.selectedModel}:generateContent?key=${API_CONFIG.GEMINI_API_KEY}`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ contents: [{ parts: [{ text: text }] }] })
+                body: JSON.stringify({ contents: [{ parts: [{ text: contextPrompt }] }] })
             });
 
             const data = await response.json();
@@ -346,10 +443,8 @@ const Chat = {
 };
 
 // ==========================================
-// EXPONDO PARA O HTML (IMPORTANTE!)
+// EXPONDO PARA O HTML
 // ==========================================
-// Como agora usamos module, as variáveis não são globais por padrão.
-// Precisamos anexá-las à janela para que o onclick="" do HTML funcione.
 window.App = App;
 window.Chat = Chat;
 window.State = State;
