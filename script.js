@@ -69,6 +69,7 @@ const State = {
 
 const App = {
     currentView: 'dashboard', // Guarda onde o usuário está
+    saveTimeout: null, // <--- ADICIONE ISSO AQUI (Variável para controlar o tempo)
 
     init() {
         // Inicia a escuta do banco de dados
@@ -79,6 +80,14 @@ const App = {
 
     // Função auxiliar para atualizar tudo quando os dados mudam
     refreshUI() {
+        // CORREÇÃO DO BUG DO TECLADO:
+        // Se o usuário estiver digitando nas anotações, NÃO redesenhe a tela agora.
+        // Isso evita que o campo seja destruído e o teclado feche.
+        if (document.activeElement && document.activeElement.id === 'notes-editor') {
+            console.log("Usuário digitando... ignorando atualização de tela.");
+            return;
+        }
+
         this.renderSidebar();
         if (this.currentView === 'dashboard') this.renderDashboard();
         if (this.currentView === 'project') this.renderProjectView(State.activeProjectId);
@@ -242,8 +251,17 @@ const App = {
     saveNotes(editor) {
         const p = State.projects.find(proj => proj.id === State.activeProjectId);
         if(p) {
+            // 1. Atualiza a memória local IMEDIATAMENTE (para não perder o que digitou)
             p.notes = [editor.innerHTML];
-            State.save();
+
+            // 2. Agenda o salvamento na nuvem para daqui a 1.5 segundos
+            // Se você digitar de novo antes disso, o timer reinicia.
+            if (this.saveTimeout) clearTimeout(this.saveTimeout);
+            
+            this.saveTimeout = setTimeout(() => {
+                State.save(); // Só envia para o Firebase quando você parar de digitar
+                console.log("Salvo na nuvem!");
+            }, 1500);
         }
     },
 
