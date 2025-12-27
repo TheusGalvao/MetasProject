@@ -1,99 +1,109 @@
-// ==========================================
-// ÁREA DE CONFIGURAÇÃO DE API
-// ==========================================
-const API_CONFIG = {
-    // Sua chave API (Cuidado ao compartilhar este arquivo!)
-    GEMINI_API_KEY: "AIzaSyDT5jfv27i7jbaKWWW0rtRemSHdQGKKod0", 
-    
-    // Configuração do Calendário
-    CALENDAR_EMBED_URL: "https://calendar.google.com/calendar/embed?src=matheusgalvao2203%40gmail.com&ctz=America%2FSao_Paulo" 
-};
+// --- IMPORTAÇÕES DO FIREBASE (Via CDN) ---
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 // ==========================================
-// LÓGICA DO SISTEMA
+// 1. CONFIGURAÇÃO (COLE SUAS CHAVES AQUI)
+// ==========================================
+const firebaseConfig = {
+    apiKey: "AIzaSyDCWSTDEHHdPFeRHiBQYB-cbIzFLwBKOW0",
+    authDomain: "space-os-b74c6.firebaseapp.com",
+    databaseURL: "https://space-os-b74c6-default-rtdb.firebaseio.com",
+    projectId: "space-os-b74c6",
+    storageBucket: "space-os-b74c6.firebasestorage.app",
+    messagingSenderId: "159368423472",
+    appId: "1:159368423472:web:6401932f64edc49cc1e5f5"
+};
+
+// Configuração da API do Gemini e Calendar
+const API_CONFIG = {
+    GEMINI_API_KEY: "SUA_CHAVE_GEMINI_AQUI", 
+    CALENDAR_EMBED_URL: "https://calendar.google.com/calendar/embed?src=seu_email%40gmail.com&ctz=America%2FSao_Paulo" 
+};
+
+// Inicializa o Firebase
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// ==========================================
+// 2. ESTADO E LÓGICA (AGORA NA NUVEM)
 // ==========================================
 
 const State = {
-    projects: [
-        { 
-            id: 1, 
-            title: "Fazer Bolo", 
-            steps: [
-                { text: "Comprar Ovos", done: true },
-                { text: "Assar", done: false }
-            ],
-            notes: ["Receita da avó..."]
-        }
-    ],
-    activeProjectId: 1,
+    projects: [], // Começa vazio, será preenchido pelo Firebase
+    activeProjectId: null,
+
+    // Salvar agora envia para a nuvem
+    save() { 
+        // Envia a lista inteira de projetos para o caminho 'projects/' no banco
+        set(ref(db, 'projects'), this.projects)
+        .catch(error => console.error("Erro ao salvar no Firebase:", error));
+    },
     
-    save() { localStorage.setItem('space_os', JSON.stringify(this.projects)); },
-    load() { 
-        const data = localStorage.getItem('space_os');
-        if(data) this.projects = JSON.parse(data);
+    // Load agora é automático (Realtime Listener)
+    listen() {
+        const projectRef = ref(db, 'projects');
+        // Essa função roda SEMPRE que algo mudar no banco de dados (no PC ou Celular)
+        onValue(projectRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                this.projects = data;
+                // Se não tiver projeto ativo, pega o primeiro
+                if (!this.activeProjectId && this.projects.length > 0) {
+                    this.activeProjectId = this.projects[0].id;
+                }
+                // Atualiza a interface toda vez que dados chegarem
+                App.refreshUI(); 
+            } else {
+                // Se o banco estiver vazio (primeira vez), cria um exemplo
+                this.projects = [{ 
+                    id: 1, title: "Primeiro Projeto", 
+                    steps: [{ text: "Configurar Firebase", done: true }], 
+                    notes: ["Bem vindo ao Space OS na Nuvem!"] 
+                }];
+                this.save();
+            }
+        });
     }
 };
 
 const App = {
+    currentView: 'dashboard', // Guarda onde o usuário está
+
     init() {
-        State.load();
-        this.renderSidebar();
-        // MUDANÇA: Inicia na Dashboard em vez do projeto 1
-        this.navigate('dashboard'); 
+        // Inicia a escuta do banco de dados
+        State.listen();
         this.setupCalendar();
+        this.navigate('dashboard');
+    },
+
+    // Função auxiliar para atualizar tudo quando os dados mudam
+    refreshUI() {
+        this.renderSidebar();
+        if (this.currentView === 'dashboard') this.renderDashboard();
+        if (this.currentView === 'project') this.renderProjectView(State.activeProjectId);
     },
 
     navigate(viewName, projectId = null) {
-        // Esconde todas as views (incluindo a nova dashboard)
-        ['view-dashboard', 'view-project', 'view-chat', 'view-calendar'].forEach(id => {
-            const el = document.getElementById(id);
-            if(el) el.classList.add('hidden');
-        });
-
+        this.currentView = viewName;
+        
+        ['view-dashboard', 'view-project', 'view-chat', 'view-calendar'].forEach(id => 
+            document.getElementById(id).classList.add('hidden')
+        );
         document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
 
-        // Lógica de Roteamento
         if (viewName === 'dashboard') {
-            this.renderDashboard(); // Calcula estatísticas
+            this.renderDashboard();
             document.getElementById('view-dashboard').classList.remove('hidden');
-        } 
-        else if (viewName === 'project' && projectId) {
+        } else if (viewName === 'project' && projectId) {
             State.activeProjectId = projectId;
             this.renderProjectView(projectId);
             document.getElementById('view-project').classList.remove('hidden');
-        } 
-        else if (viewName === 'chat') {
+        } else if (viewName === 'chat') {
             document.getElementById('view-chat').classList.remove('hidden');
-        } 
-        else if (viewName === 'calendar') {
+        } else if (viewName === 'calendar') {
             document.getElementById('view-calendar').classList.remove('hidden');
         }
-    },
-    renderDashboard() {
-        // 1. Saudação baseada na hora
-        const hour = new Date().getHours();
-        let greeting = "Bom dia";
-        if (hour >= 12) greeting = "Boa tarde";
-        if (hour >= 18) greeting = "Boa noite";
-        document.getElementById('dash-greeting').innerText = `${greeting}, Gestor`;
-
-        // 2. Cálculos Estatísticos
-        const totalProjects = State.projects.length;
-        let totalDone = 0;
-        let totalPending = 0;
-
-        State.projects.forEach(p => {
-            p.steps.forEach(step => {
-                if(step.done) totalDone++;
-                else totalPending++;
-            });
-        });
-
-        // 3. Atualiza na tela
-        // Animação simples de números
-        document.getElementById('stat-projects').innerText = totalProjects;
-        document.getElementById('stat-completed').innerText = totalDone;
-        document.getElementById('stat-pending').innerText = totalPending;
     },
 
     renderSidebar() {
@@ -108,6 +118,32 @@ const App = {
         });
     },
 
+    renderDashboard() {
+        const hour = new Date().getHours();
+        let greeting = hour >= 18 ? "Boa noite" : hour >= 12 ? "Boa tarde" : "Bom dia";
+        
+        const greetingEl = document.getElementById('dash-greeting');
+        if(greetingEl) greetingEl.innerText = `${greeting}, Comandante`;
+
+        const totalProjects = State.projects.length;
+        let totalDone = 0;
+        let totalPending = 0;
+
+        State.projects.forEach(p => {
+            if(p.steps) {
+                p.steps.forEach(step => step.done ? totalDone++ : totalPending++);
+            }
+        });
+
+        const elProj = document.getElementById('stat-projects');
+        const elDone = document.getElementById('stat-completed');
+        const elPend = document.getElementById('stat-pending');
+
+        if(elProj) elProj.innerText = totalProjects;
+        if(elDone) elDone.innerText = totalDone;
+        if(elPend) elPend.innerText = totalPending;
+    },
+
     createNewProject() {
         const name = prompt("Nome do novo projeto:");
         if(name) {
@@ -115,11 +151,11 @@ const App = {
                 id: Date.now(),
                 title: name,
                 steps: [],
-                notes: []
+                notes: ["Início do projeto..."]
             };
             State.projects.push(newProj);
-            State.save();
-            this.renderSidebar();
+            State.save(); // Salva no Firebase
+            // Não precisa chamar renderSidebar, o onValue fará isso automático
             this.navigate('project', newProj.id);
         }
     },
@@ -129,13 +165,17 @@ const App = {
         if(!project) return;
 
         const container = document.getElementById('view-project');
-        const completed = project.steps.filter(s => s.done).length;
-        const total = project.steps.length || 1; 
+        // Garante que steps e notes existam (proteção contra dados vazios)
+        const steps = project.steps || [];
+        const notes = project.notes || [];
+
+        const completed = steps.filter(s => s.done).length;
+        const total = steps.length || 1; 
         const progress = Math.round((completed / total) * 100);
 
         container.innerHTML = `
             <div style="max-width: 900px; margin: 0 auto;">
-                <input class="project-title" value="${project.title}" oninput="App.updateTitle(this.value)">
+                <input class="project-title" value="${project.title}" onchange="App.updateTitle(this.value)">
                 
                 <div class="progress-card">
                     <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600; text-transform:uppercase; color:#999">
@@ -151,23 +191,23 @@ const App = {
 
                 <h3>Anotações</h3>
                 <div id="notes-editor" contenteditable="true" style="outline:none; line-height:1.6" oninput="App.saveNotes(this)">
-                    ${project.notes.join('<br>') || "Comece a escrever aqui..."}
+                    ${notes.join('<br>') || "Comece a escrever aqui..."}
                 </div>
             </div>
         `;
 
         const stepList = container.querySelector('#step-list');
-        project.steps.forEach((step, index) => {
+        steps.forEach((step, index) => {
             const el = document.createElement('div');
             el.className = 'step-item';
             el.innerHTML = `
                 <input type="checkbox" class="step-check" ${step.done ? 'checked' : ''}>
                 <span class="step-text ${step.done ? 'done' : ''}">${step.text}</span>
+                <i class="ph ph-trash" style="margin-left:auto; color:#faa; cursor:pointer" onclick="App.deleteStep(${index})"></i>
             `;
             el.querySelector('input').addEventListener('change', () => {
                 step.done = !step.done;
-                State.save();
-                App.renderProjectView(id); 
+                State.save(); // Salva no Firebase
             });
             stepList.appendChild(el);
         });
@@ -175,31 +215,42 @@ const App = {
 
     updateTitle(val) {
         const p = State.projects.find(proj => proj.id === State.activeProjectId);
-        p.title = val;
-        State.save();
-        this.renderSidebar(); 
+        if(p) {
+            p.title = val;
+            State.save();
+        }
     },
 
     addStep() {
         const text = prompt("Nova etapa:");
         if(text) {
             const p = State.projects.find(proj => proj.id === State.activeProjectId);
+            if(!p.steps) p.steps = [];
             p.steps.push({ text, done: false });
             State.save();
-            this.renderProjectView(p.id);
+        }
+    },
+
+    deleteStep(index) {
+        if(confirm("Remover esta etapa?")) {
+            const p = State.projects.find(proj => proj.id === State.activeProjectId);
+            p.steps.splice(index, 1);
+            State.save();
         }
     },
 
     saveNotes(editor) {
         const p = State.projects.find(proj => proj.id === State.activeProjectId);
-        p.notes = [editor.innerHTML];
-        State.save();
+        if(p) {
+            p.notes = [editor.innerHTML];
+            State.save();
+        }
     },
 
     setupCalendar() {
         if (API_CONFIG.CALENDAR_EMBED_URL) {
             const area = document.getElementById('calendar-embed-area');
-            area.innerHTML = `<iframe src="${API_CONFIG.CALENDAR_EMBED_URL}" style="border: 0" width="100%" height="100%" frameborder="0" scrolling="no"></iframe>`;
+            if(area) area.innerHTML = `<iframe src="${API_CONFIG.CALENDAR_EMBED_URL}" style="border: 0" width="100%" height="100%" frameborder="0" scrolling="no"></iframe>`;
         }
     }
 };
@@ -223,28 +274,16 @@ const Chat = {
         const loadingId = this.addBubble("Buscando modelo...", 'ai', true);
 
         try {
-            // FASE 1: DESCOBERTA DO MODELO
             if (!this.selectedModel) {
+                // ... Lógica simplificada de busca de modelo ...
                 const listResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_CONFIG.GEMINI_API_KEY}`);
                 const listData = await listResponse.json();
                 const models = listData.models || [];
-                
-                // Lógica de seleção inteligente
                 let bestModel = models.find(m => m.name.toLowerCase().includes('gemini') && m.name.toLowerCase().includes('flash'));
-                if (!bestModel) bestModel = models.find(m => m.name.toLowerCase().includes('gemini') && m.name.toLowerCase().includes('pro'));
                 if (!bestModel) bestModel = models.find(m => m.name.toLowerCase().includes('gemini'));
-
-                if (bestModel) {
-                    this.selectedModel = bestModel.name.replace('models/', '');
-                    console.log("✅ Modelo:", this.selectedModel);
-                } else {
-                    this.selectedModel = 'gemini-1.5-flash';
-                }
+                
+                this.selectedModel = bestModel ? bestModel.name.replace('models/', '') : 'gemini-1.5-flash';
             }
-
-            // FASE 2: ENVIO
-            const loadingEl = document.getElementById(loadingId);
-            if(loadingEl) loadingEl.innerHTML = `<div style="font-size:11px; margin-bottom:5px; opacity:0.7; font-weight:bold">✨ Gemini</div> Pensando...`;
 
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.selectedModel}:generateContent?key=${API_CONFIG.GEMINI_API_KEY}`, {
                 method: 'POST',
@@ -253,13 +292,11 @@ const Chat = {
             });
 
             const data = await response.json();
-
             if (data.candidates && data.candidates.length > 0) {
-                const aiResponse = data.candidates[0].content.parts[0].text;
                 document.getElementById(loadingId).remove();
-                this.addBubble(aiResponse, 'ai');
+                this.addBubble(data.candidates[0].content.parts[0].text, 'ai');
             } else {
-                throw new Error("Sem resposta de texto");
+                throw new Error("Sem resposta");
             }
 
         } catch (error) {
@@ -268,7 +305,6 @@ const Chat = {
         }
     },
 
-    // --- AQUI ESTÁ A CORREÇÃO DE FORMATAÇÃO ---
     addBubble(text, type, isLoading = false) {
         const history = document.getElementById('chat-history');
         const div = document.createElement('div');
@@ -279,10 +315,8 @@ const Chat = {
         let htmlContent = `<div style="font-size:11px; margin-bottom:5px; opacity:0.7; font-weight:bold">${senderName}</div>`;
 
         if (type === 'ai' && !isLoading) {
-            // USA MARKED PARA FORMATAR (Negrito, Listas, etc)
             htmlContent += `<div class="markdown-body">${marked.parse(text)}</div>`;
         } else {
-            // Texto simples para usuário ou loading
             htmlContent += `<div>${text.replace(/\n/g, '<br>')}</div>`;
         }
         
@@ -293,5 +327,14 @@ const Chat = {
     }
 };
 
-// Start
+// ==========================================
+// EXPONDO PARA O HTML (IMPORTANTE!)
+// ==========================================
+// Como agora usamos module, as variáveis não são globais por padrão.
+// Precisamos anexá-las à janela para que o onclick="" do HTML funcione.
+window.App = App;
+window.Chat = Chat;
+window.State = State;
+
+// Inicia
 App.init();
