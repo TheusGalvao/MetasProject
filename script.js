@@ -38,26 +38,62 @@ const App = {
     init() {
         State.load();
         this.renderSidebar();
-        this.navigate('project', State.projects[0].id);
+        // MUDANÇA: Inicia na Dashboard em vez do projeto 1
+        this.navigate('dashboard'); 
         this.setupCalendar();
     },
 
     navigate(viewName, projectId = null) {
-        ['view-project', 'view-chat', 'view-calendar'].forEach(id => 
-            document.getElementById(id).classList.add('hidden')
-        );
+        // Esconde todas as views (incluindo a nova dashboard)
+        ['view-dashboard', 'view-project', 'view-chat', 'view-calendar'].forEach(id => {
+            const el = document.getElementById(id);
+            if(el) el.classList.add('hidden');
+        });
 
         document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
 
-        if (viewName === 'project' && projectId) {
+        // Lógica de Roteamento
+        if (viewName === 'dashboard') {
+            this.renderDashboard(); // Calcula estatísticas
+            document.getElementById('view-dashboard').classList.remove('hidden');
+        } 
+        else if (viewName === 'project' && projectId) {
             State.activeProjectId = projectId;
             this.renderProjectView(projectId);
             document.getElementById('view-project').classList.remove('hidden');
-        } else if (viewName === 'chat') {
+        } 
+        else if (viewName === 'chat') {
             document.getElementById('view-chat').classList.remove('hidden');
-        } else if (viewName === 'calendar') {
+        } 
+        else if (viewName === 'calendar') {
             document.getElementById('view-calendar').classList.remove('hidden');
         }
+    },
+    renderDashboard() {
+        // 1. Saudação baseada na hora
+        const hour = new Date().getHours();
+        let greeting = "Bom dia";
+        if (hour >= 12) greeting = "Boa tarde";
+        if (hour >= 18) greeting = "Boa noite";
+        document.getElementById('dash-greeting').innerText = `${greeting}, Gestor`;
+
+        // 2. Cálculos Estatísticos
+        const totalProjects = State.projects.length;
+        let totalDone = 0;
+        let totalPending = 0;
+
+        State.projects.forEach(p => {
+            p.steps.forEach(step => {
+                if(step.done) totalDone++;
+                else totalPending++;
+            });
+        });
+
+        // 3. Atualiza na tela
+        // Animação simples de números
+        document.getElementById('stat-projects').innerText = totalProjects;
+        document.getElementById('stat-completed').innerText = totalDone;
+        document.getElementById('stat-pending').innerText = totalPending;
     },
 
     renderSidebar() {

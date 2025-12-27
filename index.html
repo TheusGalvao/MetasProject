@@ -14,9 +14,9 @@
 <body>
 
     <aside>
-        <div class="brand">
-            <i class="ph ph-planet" style="font-size: 24px;"></i> Space OS
-        </div>
+        <div class="brand" onclick="App.navigate('dashboard')" style="cursor: pointer;">
+    <i class="ph ph-planet" style="font-size: 24px;"></i> Space OS
+</div>
 
         <div class="menu-label">Navegação</div>
         <div class="nav-item" onclick="App.navigate('calendar')">
@@ -35,6 +35,45 @@
     </aside>
 
     <main>
+        <div id="view-dashboard" class="content-scroll">
+    <div style="max-width: 900px; margin: 0 auto;">
+        
+        <div id="dash-greeting" style="font-size: 32px; font-weight: 700; margin-bottom: 5px;">Olá, Viajante</div>
+        <div style="color: var(--text-light); margin-bottom: 40px;">Aqui está o resumo da sua base hoje.</div>
+
+        <div class="dashboard-grid">
+            <div class="stat-card">
+                <div class="stat-icon" style="background: #eef3ff; color: #2383e2;"><i class="ph ph-folder-open"></i></div>
+                <div class="stat-value" id="stat-projects">0</div>
+                <div class="stat-label">Projetos Ativos</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon" style="background: #e6fffa; color: #00a080;"><i class="ph ph-check-circle"></i></div>
+                <div class="stat-value" id="stat-completed">0</div>
+                <div class="stat-label">Tarefas Concluídas</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon" style="background: #fff5f5; color: #e53e3e;"><i class="ph ph-warning-circle"></i></div>
+                <div class="stat-value" id="stat-pending">0</div>
+                <div class="stat-label">Tarefas Pendentes</div>
+            </div>
+        </div>
+
+        <h3 style="margin-top: 40px;">Acesso Rápido</h3>
+        <div class="quick-actions">
+            <div class="action-btn" onclick="App.createNewProject()">
+                <i class="ph ph-plus"></i> Novo Projeto
+            </div>
+            <div class="action-btn" onclick="App.navigate('chat')">
+                <i class="ph ph-sparkle"></i> Falar com IA
+            </div>
+            <div class="action-btn" onclick="App.navigate('calendar')">
+                <i class="ph ph-calendar"></i> Ver Agenda
+            </div>
+        </div>
+
+    </div>
+</div>
         
         <div id="view-project" class="content-scroll">
             </div>
