@@ -270,4 +270,31 @@ main { flex: 1; display: flex; flex-direction: column; background: var(--bg); po
     transition: 0.1s;
     min-width: 150px;
 }
+
 .action-btn:hover { border-color: var(--accent); color: var(--accent); background: #f8fbff; }
+/* ... (código anterior da sidebar mobile) ... */
+
+    /* --- RESPONSIVIDADE DA DASHBOARD (LANDING PAGE) --- */
+    
+    /* Ajustar o Título de "Olá, Viajante" */
+    #dash-greeting {
+        font-size: 24px !important; /* Reduz tamanho da fonte */
+    }
+
+    /* Cards de Estatística em Coluna Única */
+    .dashboard-grid {
+        grid-template-columns: 1fr; /* Um card por linha */
+        gap: 15px;
+    }
+
+    /* Botões de Ação Rápida (Empilhados e Largos) */
+    .quick-actions {
+        flex-direction: column; /* Um botão embaixo do outro */
+        gap: 10px;
+    }
+
+    .action-btn {
+        width: 100%; /* Ocupa a largura total da tela */
+        justify-content: center; /* Centraliza o ícone e texto */
+        padding: 15px; /* Área de toque confortável */
+    } /* <--- Essa chave fecha o @media */
