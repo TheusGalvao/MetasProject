@@ -88,7 +88,6 @@ const App = {
             const data = await response.json();
             console.log("Versão:", data.version);
             
-            // Se você criar um elemento no HTML com id="app-version", ele preenche
             const versionEl = document.getElementById('app-version');
             if (versionEl) {
                 versionEl.innerText = `Space OS ${data.version}`;
