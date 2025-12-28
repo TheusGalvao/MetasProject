@@ -17,18 +17,19 @@ const firebaseConfig = {
 };
 
 const API_CONFIG = {
-    // ⚠️ COLOQUE SUA CHAVE GEMINI AQUI SE TIVER APAGADO
+    // ⚠️ COLOQUE SUA CHAVE GEMINI AQUI
     GEMINI_API_KEY: "SUA_CHAVE_GEMINI_AQUI", 
     CALENDAR_EMBED_URL: "https://calendar.google.com/calendar/embed?src=seu_email%40gmail.com&ctz=America%2FSao_Paulo" 
 };
 
+// Inicializa o Firebase
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 
 // ==========================================
-// 2. PWA
+// 2. PWA (INSTALAÇÃO)
 // ==========================================
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -77,15 +78,36 @@ const App = {
     currentView: 'dashboard', 
     saveTimeout: null,
     lastRenderedId: null,
-    draggedItemIndex: null, // Variável para controlar o Drag and Drop
+    draggedItemIndex: null, // Controle do Drag & Drop
+
+    // Checagem de versão automática (via GitHub Actions)
+    async checkSystemVersion() {
+        try {
+            const response = await fetch('./version.json?t=' + new Date().getTime());
+            if (!response.ok) throw new Error("Versão não encontrada");
+            const data = await response.json();
+            console.log("Versão:", data.version);
+            
+            // Se você criar um elemento no HTML com id="app-version", ele preenche
+            const versionEl = document.getElementById('app-version');
+            if (versionEl) {
+                versionEl.innerText = `Space OS ${data.version}`;
+                versionEl.title = `Build: ${data.build} | Data: ${data.date}`;
+            }
+        } catch (error) {
+            console.warn("Modo Dev (sem version.json)");
+        }
+    },
 
     init() {
+        // Monitora Login
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 State.user = user;
                 document.getElementById('login-screen').style.display = 'none';
                 State.listen();
                 this.setupCalendar();
+                this.checkSystemVersion(); // Checa versão ao logar
                 this.navigate('dashboard');
             } else {
                 State.user = null;
@@ -99,7 +121,7 @@ const App = {
     logout() { signOut(auth).then(() => window.location.reload()); },
 
     refreshUI() {
-        // Se estiver editando algo, não redesenha para não fechar teclado/perder foco
+        // Proteção de Foco (Evita fechar teclado mobile)
         if (document.activeElement && (document.activeElement.id === 'notes-editor' || document.activeElement.classList.contains('step-input'))) return;
 
         this.renderSidebar();
@@ -186,6 +208,7 @@ const App = {
         const isSameProject = this.lastRenderedId === id;
         this.lastRenderedId = id;
 
+        // Lógica Cirúrgica: Se já existe, atualiza partes. Se não, desenha tudo.
         if (!existingEditor || !isSameProject) {
             container.innerHTML = `
                 <div style="max-width: 900px; margin: 0 auto;">
@@ -208,6 +231,7 @@ const App = {
             `;
             this.renderStepsList(steps);
         } else {
+            // Atualização Parcial
             const titleInput = document.getElementById('proj-title-input');
             if (document.activeElement !== titleInput) titleInput.value = project.title;
 
@@ -223,14 +247,13 @@ const App = {
         }
     },
 
-    // --- NOVA RENDERIZAÇÃO DE LISTA (Com Drag & Drop e Edição) ---
+    // --- RENDERIZAÇÃO DA LISTA (Com Drag & Drop e Edição) ---
     renderStepsList(steps) {
         const stepList = document.getElementById('step-list');
-        // Importante: Não limpamos se estiver arrastando para evitar glitch visual, 
-        // mas aqui reconstruímos para garantir a ordem correta.
         stepList.innerHTML = '';
         
         steps.forEach((step, index) => {
+            // Cores das Datas
             let dateStyle = "color:#999;";
             if(step.date) {
                 const today = new Date().toISOString().split('T')[0];
@@ -240,10 +263,9 @@ const App = {
 
             const el = document.createElement('div');
             el.className = 'step-item';
-            el.setAttribute('draggable', 'true'); // Habilita arrastar
+            el.setAttribute('draggable', 'true'); // Permite arrastar
             el.dataset.index = index;
 
-            // HTML: Alça + Checkbox + Input Texto + Data + Lixeira
             el.innerHTML = `
                 <div class="drag-handle"><i class="ph ph-dots-six-vertical"></i></div>
                 <input type="checkbox" class="step-check" ${step.done ? 'checked' : ''} style="cursor:pointer">
@@ -259,13 +281,13 @@ const App = {
                 <i class="ph ph-trash" style="color:#faa; cursor:pointer" onclick="App.deleteStep(${index})"></i>
             `;
             
-            // Eventos Checkbox
+            // Listeners
             el.querySelector('.step-check').addEventListener('change', () => {
                 step.done = !step.done;
                 State.save(); 
             });
 
-            // Eventos Drag and Drop
+            // Drag Events
             el.addEventListener('dragstart', (e) => App.dragStart(e, index));
             el.addEventListener('dragover', (e) => App.dragOver(e));
             el.addEventListener('drop', (e) => App.drop(e, index));
@@ -274,16 +296,18 @@ const App = {
         });
     },
 
-    // --- FUNÇÕES DE EDIÇÃO E DRAG & DROP ---
-
+    // --- MANIPULAÇÃO DE DADOS ---
     updateStepText(index, newText) {
         const p = State.projects.find(proj => proj.id === State.activeProjectId);
-        if(p && p.steps[index]) {
-            p.steps[index].text = newText;
-            State.save();
-        }
+        if(p && p.steps[index]) { p.steps[index].text = newText; State.save(); }
     },
 
+    updateStepDate(index, newDate) {
+        const p = State.projects.find(proj => proj.id === State.activeProjectId);
+        if(p && p.steps[index]) { p.steps[index].date = newDate; State.save(); }
+    },
+
+    // Funções de Drag and Drop
     dragStart(e, index) {
         this.draggedItemIndex = index;
         e.dataTransfer.effectAllowed = 'move';
@@ -291,7 +315,7 @@ const App = {
     },
 
     dragOver(e) {
-        e.preventDefault(); // Necessário para permitir o drop
+        e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         return false;
     },
@@ -300,19 +324,16 @@ const App = {
         e.stopPropagation();
         const p = State.projects.find(proj => proj.id === State.activeProjectId);
         if (p && this.draggedItemIndex !== null && this.draggedItemIndex !== targetIndex) {
-            // Remove o item da posição antiga
             const item = p.steps.splice(this.draggedItemIndex, 1)[0];
-            // Insere na nova posição
             p.steps.splice(targetIndex, 0, item);
             State.save();
         }
-        // Remove classe visual
         document.querySelectorAll('.step-item').forEach(el => el.classList.remove('dragging'));
         this.draggedItemIndex = null;
         return false;
     },
 
-    // --- FUNÇÕES EXISTENTES ---
+    // Outros Updates
     updateTitle(val) {
         const p = State.projects.find(proj => proj.id === State.activeProjectId);
         if(p) { p.title = val; State.save(); }
@@ -325,10 +346,6 @@ const App = {
             p.steps.push({ text, done: false, date: "" });
             State.save();
         }
-    },
-    updateStepDate(index, newDate) {
-        const p = State.projects.find(proj => proj.id === State.activeProjectId);
-        if(p && p.steps[index]) { p.steps[index].date = newDate; State.save(); }
     },
     deleteStep(index) {
         if(confirm("Remover esta etapa?")) {
@@ -366,6 +383,7 @@ const Chat = {
         if (!API_CONFIG.GEMINI_API_KEY) { this.addBubble("⚠️ Configure sua API Key.", 'ai'); return; }
         const loadingId = this.addBubble("Pensando...", 'ai', true);
 
+        // Contexto Inteligente
         let contextPrompt = "";
         if (State.activeProjectId) {
             const p = State.projects.find(proj => proj.id === State.activeProjectId);

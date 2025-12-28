@@ -1,0 +1,30 @@
+name: Update Version
+on:
+  push:
+    branches:
+      - main  # Ou 'master', dependendo do nome da sua branch principal
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Permissão para o robô editar arquivos
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 # Importante: Baixa todo o histórico para contar os commits
+
+    - name: Contar Commits e Gerar JSON
+      run: |
+        COMMIT_COUNT=$(git rev-list --count HEAD)
+        echo "{\"version\": \"v1.0.$COMMIT_COUNT\", \"build\": $COMMIT_COUNT, \"date\": \"$(date -u)\"}" > version.json
+        echo "Versão gerada: v1.0.$COMMIT_COUNT"
+
+    - name: Commit e Push da nova versão
+      run: |
+        git config --global user.name 'Space OS Bot'
+        git config --global user.email 'bot@spaceos.app'
+        git add version.json
+        # Só faz commit se houver mudança (evita erros se rodar 2x seguidas)
+        git diff --quiet && git diff --staged --quiet || (git commit -m "chore: atualiza versão para build $COMMIT_COUNT [skip ci]" && git push)
