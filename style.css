@@ -124,6 +124,61 @@ main { flex: 1; display: flex; flex-direction: column; background: var(--bg); po
 .block-content:empty::before { content: attr(placeholder); color: #ddd; }
 .block-content { outline: none; }
 
+/* --- NOVOS ESTILOS: EDIÇÃO E REORDENAÇÃO --- */
+
+.step-item {
+    /* Prepara para animação de arrastar */
+    transition: background 0.2s, border 0.2s;
+    border: 1px solid transparent;
+    border-bottom: 1px solid var(--border); /* Mantém a linha original */
+}
+
+/* Estilo quando o item está sendo arrastado */
+.step-item.dragging {
+    opacity: 0.5;
+    background: #f9f9f9;
+    border: 1px dashed #ccc;
+}
+
+/* A "alça" para pegar e arrastar */
+.drag-handle {
+    cursor: grab;
+    color: #d0d0d0;
+    margin-right: 8px;
+    display: flex;
+    align-items: center;
+    padding: 4px;
+}
+.drag-handle:hover { color: var(--text-light); }
+.drag-handle:active { cursor: grabbing; }
+
+/* O input que substitui o texto estático */
+.step-input {
+    flex: 1; /* Ocupa todo espaço disponível */
+    border: none;
+    background: transparent;
+    font-size: 15px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif;
+    color: var(--text-main);
+    outline: none;
+    padding: 4px 0;
+    margin: 0 8px;
+    min-width: 50px;
+}
+
+/* Efeito visual quando clica para editar */
+.step-input:focus {
+    background: rgba(0,0,0,0.03);
+    border-radius: 4px;
+    padding-left: 6px;
+}
+
+/* Texto riscado quando concluído */
+.step-input.done {
+    text-decoration: line-through;
+    color: var(--text-light);
+}
+
 /* =========================================
    RESPONSIVIDADE (MOBILE)
    Adicione isso ao final do arquivo style.css
